@@ -44,6 +44,12 @@
                                 @error('phone') <span class="error">{{ $message }}</span> @enderror
                             </div>
 
+                            <div class="field">
+                                <label class="label" for="lid">WhatsApp LID / Tag Bot</label>
+                                <input type="text" name="lid" id="lid" class="input" value="{{ old('lid', $user->lid) }}" maxlength="30" placeholder="Contoh: 260090485551165">
+                                @error('lid') <span class="error">{{ $message }}</span> @enderror
+                            </div>
+
                             <div class="field field-full">
                                 <label class="label">Peran akun</label>
                                 <input type="text" class="input" value="{{ $user->roleLabel() }}" disabled>
@@ -64,46 +70,19 @@
             <div class="card">
                 <div class="card-head">
                     <div>
-                        <h3 class="card-title"><x-icon name="lock" :size="16" /> Keamanan akun</h3>
-                        <p class="card-sub">Gunakan kata sandi yang kuat dan tidak dipakai di layanan lain.</p>
+                        <h3 class="card-title"><x-icon name="lock" :size="16" /> Keamanan & Reset Kata Sandi</h3>
+                        <p class="card-sub">Pengaturan ulang kata sandi wajib melalui tautan verifikasi yang dikirim ke email atau nomor telepon Anda.</p>
                     </div>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ route('profile.password') }}">
-                        @csrf
-                        @method('PUT')
-
-                        <div class="field">
-                            <label class="label" for="current_password">Kata sandi saat ini <span class="req">*</span></label>
-                            <div class="input-group">
-                                <input type="password" name="current_password" id="current_password" class="input" required autocomplete="current-password">
-                                <button type="button" class="input-action" data-password-toggle="current_password" aria-label="Tampilkan kata sandi">
-                                    <x-icon name="eye" :size="15" class="pw-eye" />
-                                    <x-icon name="eye-off" :size="15" class="pw-eye-off" />
-                                </button>
-                            </div>
-                            @error('current_password') <span class="error">{{ $message }}</span> @enderror
-                        </div>
-
-                        <div class="form-grid">
-                            <div class="field">
-                                <label class="label" for="password">Kata sandi baru <span class="req">*</span></label>
-                                <input type="password" name="password" id="password" class="input" required minlength="8" autocomplete="new-password">
-                                @error('password') <span class="error">{{ $message }}</span> @enderror
-                            </div>
-                            <div class="field">
-                                <label class="label" for="password_confirmation">Ulangi kata sandi <span class="req">*</span></label>
-                                <input type="password" name="password_confirmation" id="password_confirmation" class="input" required minlength="8" autocomplete="new-password">
-                            </div>
-                        </div>
-
-                        <div class="form-actions">
-                            <button type="submit" class="btn btn-outline">
-                                <x-icon name="lock" :size="15" />
-                                Ganti kata sandi
-                            </button>
-                        </div>
-                    </form>
+                    <div class="notice mb-3">
+                        <x-icon name="shield" :size="15" />
+                        <span>Kata sandi Anda disimpan menggunakan enkripsi <strong>Bcrypt</strong>. Untuk mengganti kata sandi, minta tautan verifikasi melalui halaman khusus reset kata sandi.</span>
+                    </div>
+                    <a href="{{ route('password.request') }}" class="btn btn-outline">
+                        <x-icon name="mail" :size="15" />
+                        Kirim tautan verifikasi reset kata sandi
+                    </a>
                 </div>
             </div>
         </div>
@@ -131,6 +110,10 @@
                     <div class="info-item is-full">
                         <span>Telepon</span>
                         <strong>{{ $user->phone ?: 'Belum diisi' }}</strong>
+                    </div>
+                    <div class="info-item is-full">
+                        <span>WhatsApp LID</span>
+                        <strong>{{ $user->lid ?: 'Belum diisi' }}</strong>
                     </div>
                     <div class="info-item is-full">
                         <span>Terakhir masuk</span>

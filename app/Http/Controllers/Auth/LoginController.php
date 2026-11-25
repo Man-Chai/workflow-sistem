@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use RuntimeException;
 
 class LoginController extends Controller
 {
@@ -39,9 +40,31 @@ class LoginController extends Controller
             ]);
         }
 
-        $user = User::query()->where('email', $credentials['email'])->first();
+        $user = User::query()
+            ->whereRaw('LOWER(email) = ?', [Str::lower($credentials['email'])])
+            ->first();
 
-        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+        $validPassword = false;
+
+        if ($user && ! empty($user->password)) {
+            $storedPassword = (string) $user->password;
+
+            if (preg_match('/^\$2[ayb]\$/', $storedPassword)) {
+                try {
+                    $validPassword = Hash::check($credentials['password'], $storedPassword);
+                } catch (RuntimeException) {
+                    $validPassword = false;
+                }
+            } else {
+                // Auto-upgrade any legacy plain-text string to Bcrypt hash
+                if (hash_equals($storedPassword, $credentials['password'])) {
+                    $validPassword = true;
+                    $user->forceFill(['password' => Hash::make($credentials['password'])])->save();
+                }
+            }
+        }
+
+        if (! $user || ! $validPassword) {
             RateLimiter::hit($throttleKey, 60);
 
             throw ValidationException::withMessages([
@@ -49,16 +72,10 @@ class LoginController extends Controller
             ]);
         }
 
-        if (! $user->is_active) {
-            throw ValidationException::withMessages([
-                'email' => 'Akun ini dinonaktifkan. Silakan hubungi administrator.',
-            ]);
-        }
-
-        Auth::login($user, $request->boolean('remember'));
+        Auth::login($user);
         RateLimiter::clear($throttleKey);
         $request->session()->regenerate();
-        $user->forceFill(['last_login_at' => now()])->save();
+        $user->touch();
 
         return redirect()
             ->intended(route('dashboard'))

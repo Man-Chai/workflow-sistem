@@ -46,4 +46,4 @@ USER www-data
 
 EXPOSE 80
 
-CMD ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]
+CMD ["sh", "-c", "mkdir -p /app/storage/database && touch /app/storage/database/database.sqlite && php artisan migrate --force && php -r 'require \"vendor/autoload.php\"; $app = require_once \"bootstrap/app.php\"; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); if (App\\Models\\User::count() === 0) { Illuminate\\Support\\Facades\\Artisan::call(\"db:seed\", [\"--force\" => true]); }' && exec frankenphp run --config /etc/frankenphp/Caddyfile"]

@@ -11,7 +11,7 @@
         <div>
             <a href="{{ route('agenda.index') }}" class="card-link mb-2"><x-icon name="chevron-left" :size="12" /> Kembali ke agenda</a>
             <h1 class="page-title">{{ $agenda ? 'Ubah agenda' : 'Tambah agenda' }}</h1>
-            <p class="page-sub">Agenda akan tampil pada dashboard anggota kelas sesuai cakupan yang dipilih.</p>
+            <p class="page-sub">Agenda disimpan ke tabel <code>agenda</code> dan otomatis memicu webhook pengingat n8n.</p>
         </div>
     </div>
 
@@ -26,31 +26,23 @@
                 <div class="form-grid">
                     <div class="field field-full">
                         <label class="label" for="title">Judul agenda <span class="req">*</span></label>
-                        <input type="text" name="title" id="title" class="input" value="{{ old('title', $agenda?->title) }}" placeholder="Contoh: Rapat koordinasi orang tua" required maxlength="140">
+                        <input type="text" name="title" id="title" class="input" value="{{ old('title', $agenda?->title) }}" placeholder="Contoh: Rapat koordinasi orang tua" required maxlength="255">
                         @error('title') <span class="error">{{ $message }}</span> @enderror
                     </div>
 
-                    <div class="field">
-                        <label class="label" for="class_id">Cakupan <span class="req">*</span></label>
-                        @if($user->isAdmin())
-                            <select name="class_id" id="class_id" class="select">
-                                <option value="">Semua kelas (agenda sekolah)</option>
+                    <div class="field field-full">
+                        <label class="label" for="class_id">Kelas <span class="req">*</span></label>
+                        @if($user->isAdmin() || $classes->count() > 1)
+                            <select name="class_id" id="class_id" class="select" required>
                                 @foreach($classes as $class)
-                                    <option value="{{ $class->id }}" @selected((int) old('class_id', $agenda?->class_id) === $class->id)>{{ $class->name }} · {{ $class->academic_year }}</option>
+                                    <option value="{{ $class->id }}" @selected((string) old('class_id', $agenda?->class_id) === (string) $class->id)>{{ $class->name }}</option>
                                 @endforeach
                             </select>
-                            <span class="hint">Kosongkan untuk agenda yang berlaku di seluruh sekolah.</span>
                         @else
-                            <input type="text" class="input" value="{{ $classes->first()?->name }} · {{ $classes->first()?->academic_year }}" disabled>
-                            <span class="hint">Agenda otomatis tercatat pada kelas yang Anda koordinasikan.</span>
+                            <input type="hidden" name="class_id" value="{{ $classes->first()?->id }}">
+                            <input type="text" class="input" value="{{ $classes->first()?->name }}" disabled>
                         @endif
                         @error('class_id') <span class="error">{{ $message }}</span> @enderror
-                    </div>
-
-                    <div class="field">
-                        <label class="label" for="location">Lokasi</label>
-                        <input type="text" name="location" id="location" class="input" value="{{ old('location', $agenda?->location) }}" placeholder="Contoh: Ruang kelas X IPA 1" maxlength="140">
-                        @error('location') <span class="error">{{ $message }}</span> @enderror
                     </div>
 
                     <div class="field">
@@ -62,25 +54,13 @@
                     <div class="field">
                         <label class="label" for="ends_at">Selesai</label>
                         <input type="datetime-local" name="ends_at" id="ends_at" class="input" value="{{ old('ends_at', $agenda?->ends_at?->format('Y-m-d\TH:i')) }}">
-                        <span class="hint">Opsional, harus setelah waktu mulai.</span>
                         @error('ends_at') <span class="error">{{ $message }}</span> @enderror
                     </div>
 
                     <div class="field field-full">
-                        <label class="label" for="description">Deskripsi</label>
+                        <label class="label" for="description">Keterangan</label>
                         <textarea name="description" id="description" class="textarea" maxlength="2000" placeholder="Tuliskan tujuan, persiapan, atau informasi penting lainnya.">{{ old('description', $agenda?->description) }}</textarea>
                         @error('description') <span class="error">{{ $message }}</span> @enderror
-                    </div>
-
-                    <div class="field field-full">
-                        <label class="checkbox">
-                            <input type="checkbox" name="is_published" value="1" @checked(old('is_published', $agenda?->is_published ?? true))>
-                            <span>
-                                <strong>Terbitkan agenda</strong>
-                                <small>Jika dimatikan, agenda tidak tampil untuk orang tua.</small>
-                            </span>
-                        </label>
-                        @error('is_published') <span class="error">{{ $message }}</span> @enderror
                     </div>
                 </div>
 

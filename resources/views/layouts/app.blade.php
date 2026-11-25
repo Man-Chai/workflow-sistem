@@ -59,10 +59,18 @@
                 <span class="side-label">Administrasi</span>
                 <a href="{{ route('classes.index') }}" class="side-link {{ request()->routeIs('classes.*') ? 'is-active' : '' }}">
                     <x-icon name="school" :size="18" />
-                    <span>Kelas & siswa</span>
+                    <span>Kelas</span>
+                </a>
+                <a href="{{ route('students.index') }}" class="side-link {{ request()->routeIs('students.*') || request()->routeIs('parents.*') ? 'is-active' : '' }}">
+                    <x-icon name="users" :size="18" />
+                    <span>Siswa & ortu</span>
+                </a>
+                <a href="{{ route('wa-groups.index') }}" class="side-link {{ request()->routeIs('wa-groups.*') ? 'is-active' : '' }}">
+                    <x-icon name="phone" :size="18" />
+                    <span>Grup WhatsApp</span>
                 </a>
                 <a href="{{ route('users.index') }}" class="side-link {{ request()->routeIs('users.*') ? 'is-active' : '' }}">
-                    <x-icon name="users" :size="18" />
+                    <x-icon name="user" :size="18" />
                     <span>Pengguna</span>
                 </a>
             @endif

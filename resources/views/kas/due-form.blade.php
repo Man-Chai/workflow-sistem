@@ -60,7 +60,7 @@
 
                     <div class="field">
                         <label class="label" for="amount">Nominal per siswa <span class="req">*</span></label>
-                        <input type="number" name="amount" id="amount" class="input" min="1000" step="1000" value="{{ old('amount', $due?->amount) }}" placeholder="50000" required>
+                        <input type="number" name="amount" id="amount" class="input" min="1000" step="any" value="{{ old('amount', $due?->amount) }}" placeholder="50000" required>
                         <span class="hint">Target kelas = nominal × jumlah siswa aktif.</span>
                         @error('amount') <span class="error">{{ $message }}</span> @enderror
                     </div>

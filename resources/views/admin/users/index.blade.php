@@ -68,6 +68,13 @@
                                         <span>
                                             <span class="cell-main">{{ $user->name }}</span>
                                             <span class="cell-sub">{{ $user->email }}</span>
+                                            @if($user->phone || $user->lid)
+                                                <span class="cell-sub tiny muted">
+                                                    @if($user->phone) Telp: {{ $user->phone }} @endif
+                                                    @if($user->phone && $user->lid) · @endif
+                                                    @if($user->lid) LID: {{ $user->lid }} @endif
+                                                </span>
+                                            @endif
                                         </span>
                                     </div>
                                 </td>
@@ -77,10 +84,15 @@
                                     </span>
                                 </td>
                                 <td class="small muted">
-                                    @if($user->isParent())
+                                    @if($user->classesCoordinated->isNotEmpty())
+                                        <span class="badge badge-brand">
+                                            <x-icon name="school" :size="12" />
+                                            {{ $user->classesCoordinated->pluck('name')->implode(', ') }}
+                                        </span>
+                                    @elseif($user->isParent())
                                         {{ $user->children_count }} anak terhubung
                                     @elseif($user->isCoordinator())
-                                        {{ $user->classes_coordinated_count }} kelas
+                                        Belum ada kelas
                                     @else
                                         Akses penuh
                                     @endif

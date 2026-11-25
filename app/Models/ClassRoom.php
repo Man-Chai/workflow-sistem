@@ -2,84 +2,128 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class ClassRoom extends Model
 {
-    protected $table = 'classes';
+    use HasUuids;
 
-    /**
-     * Daftar kelas yang digunakan aplikasi: Kelas 1 sampai Kelas 6.
-     *
-     * @var list<string>
-     */
-    public const LEVELS = [
-        'Kelas 1',
-        'Kelas 2',
-        'Kelas 3',
-        'Kelas 4',
-        'Kelas 5',
-        'Kelas 6',
-    ];
+    protected $table = 'kelas';
+
+    protected $primaryKey = 'id_kelas';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
 
     protected $fillable = [
-        'name',
-        'academic_year',
-        'coordinator_id',
-        'description',
+        'nama',
     ];
 
-    /** @return BelongsTo<User, $this> */
-    public function coordinator(): BelongsTo
+    public function getIdAttribute(): ?string
     {
-        return $this->belongsTo(User::class, 'coordinator_id');
+        return $this->attributes['id_kelas'] ?? null;
+    }
+
+    public function getNameAttribute(): string
+    {
+        return (string) ($this->attributes['nama'] ?? '');
+    }
+
+    public function setNameAttribute(?string $value): void
+    {
+        $this->attributes['nama'] = $value;
+    }
+
+    public function getAcademicYearAttribute(): string
+    {
+        return '2026/2027';
+    }
+
+    public function getDescriptionAttribute(): ?string
+    {
+        $waGroups = $this->relationLoaded('grupWa') ? $this->grupWa : $this->grupWa()->get();
+        if ($waGroups->isEmpty()) {
+            return null;
+        }
+
+        return 'Grup WA: '.$waGroups->pluck('nama')->implode(', ');
+    }
+
+    /** @return BelongsToMany<User, $this> */
+    public function coordinators(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            User::class,
+            'kelas_user',
+            'id_kelas',
+            'id_user',
+            'id_kelas',
+            'id_user'
+        );
+    }
+
+    public function getCoordinatorAttribute(): ?User
+    {
+        if ($this->relationLoaded('coordinators')) {
+            return $this->coordinators->first();
+        }
+
+        return $this->coordinators()->first();
+    }
+
+    public function getCoordinatorIdAttribute(): ?string
+    {
+        return $this->coordinator?->id_user;
+    }
+
+    /** @return HasMany<GrupWa, $this> */
+    public function grupWa(): HasMany
+    {
+        return $this->hasMany(GrupWa::class, 'id_kelas', 'id_kelas');
     }
 
     /** @return HasMany<Student, $this> */
     public function students(): HasMany
     {
-        return $this->hasMany(Student::class, 'class_id');
-    }
-
-    /** @return HasMany<Due, $this> */
-    public function dues(): HasMany
-    {
-        return $this->hasMany(Due::class, 'class_id');
+        return $this->hasMany(Student::class, 'id_kelas', 'id_kelas');
     }
 
     /** @return HasMany<CashTransaction, $this> */
     public function cashTransactions(): HasMany
     {
-        return $this->hasMany(CashTransaction::class, 'class_id');
+        return $this->hasMany(CashTransaction::class, 'id_kelas', 'id_kelas');
     }
 
-    /** @return HasManyThrough<Payment, Due, $this> */
+    /** @return HasManyThrough<Payment, Student, $this> */
     public function payments(): HasManyThrough
     {
-        return $this->hasManyThrough(Payment::class, Due::class, 'class_id', 'due_id');
+        return $this->hasManyThrough(
+            Payment::class,
+            Student::class,
+            'id_kelas',
+            'id_siswa',
+            'id_kelas',
+            'id_siswa'
+        );
     }
 
     /** @return HasMany<Agenda, $this> */
     public function agendas(): HasMany
     {
-        return $this->hasMany(Agenda::class, 'class_id');
-    }
-
-    /** @return HasMany<Announcement, $this> */
-    public function announcements(): HasMany
-    {
-        return $this->hasMany(Announcement::class, 'class_id');
+        return $this->hasMany(Agenda::class, 'id_kelas', 'id_kelas');
     }
 
     public function cashBalance(): int
     {
-        $income = (int) $this->cashTransactions()->where('type', 'masuk')->sum('amount');
-        $expense = (int) $this->cashTransactions()->where('type', 'keluar')->sum('amount');
+        $income = (float) $this->cashTransactions()->sum('debit');
+        $expense = (float) $this->cashTransactions()->sum('kredit');
 
-        return $income - $expense;
+        return (int) round($income - $expense);
     }
 
     public function label(): string

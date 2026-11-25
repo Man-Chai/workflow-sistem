@@ -26,20 +26,20 @@
         <div class="auth-copy">
             <span class="eyebrow"><x-icon name="sparkles" :size="13" /> Kolaborasi kelas, tanpa ribet</span>
             <h1>Kelola kelas, kas, dan kabar sekolah dalam <em>satu ruang</em>.</h1>
-            <p>KorlasSync menyatukan koordinator kelas, orang tua, dan sekolah. Setiap iuran tercatat, setiap agenda terlihat, dan setiap kabar sampai ke orang yang tepat.</p>
+            <p>KorlasSync menyatukan koordinator kelas, orang tua, dan sekolah. Setiap pembukuan tercatat, setiap agenda terlihat, dan setiap kabar sampai ke orang yang tepat.</p>
 
             <ul class="auth-features">
                 <li>
                     <span class="auth-feature-icon"><x-icon name="wallet" :size="14" /></span>
-                    <span><strong>Kas yang transparan.</strong> Catat pemasukan, pengeluaran, dan verifikasi iuran dengan riwayat yang rapi.</span>
+                    <span><strong>Kas yang transparan.</strong> Catat pemasukan, pengeluaran, dan pembukuan siswa dengan riwayat yang rapi.</span>
                 </li>
                 <li>
                     <span class="auth-feature-icon"><x-icon name="calendar" :size="14" /></span>
-                    <span><strong>Agenda yang terkoordinasi.</strong> Rapat, kerja bakti, dan kegiatan kelas selalu dalam pantauan.</span>
+                    <span><strong>Agenda yang terkoordinasi.</strong> Rapat, kegiatan, dan jadwal kelas terintegrasi dengan pengingat grup WhatsApp.</span>
                 </li>
                 <li>
                     <span class="auth-feature-icon"><x-icon name="bell" :size="14" /></span>
-                    <span><strong>Kabar yang sampai.</strong> Pemberitahuan penting langsung tampil di dashboard sesuai kelas anak Anda.</span>
+                    <span><strong>Kabar yang sampai.</strong> Pemberitahuan penting langsung tampil di dashboard sesuai kelas Anda.</span>
                 </li>
             </ul>
 
@@ -47,7 +47,7 @@
                 <div class="showcase-card">
                     <span>Peran terhubung</span>
                     <strong>3 peran</strong>
-                    <small>Admin · Koordinator · Orang tua</small>
+                    <small>Admin · Korlas · User</small>
                 </div>
                 <div class="showcase-card">
                     <span>Transparansi kas</span>
@@ -57,7 +57,7 @@
                 <div class="showcase-card">
                     <span>Ruang terpadu</span>
                     <strong>1 ruang</strong>
-                    <small>Kas, agenda, pemberitahuan</small>
+                    <small>Kas, agenda, WhatsApp Bot</small>
                 </div>
             </div>
         </div>
@@ -78,7 +78,7 @@
 
         <span class="eyebrow">Masuk akun</span>
         <h2>Selamat datang kembali</h2>
-        <p class="lead">Gunakan email yang terdaftar di kelas. Orang tua dapat mendaftar sendiri, sedangkan akun koordinator dan admin dibuat oleh sekolah.</p>
+        <p class="lead">Gunakan alamat email yang terdaftar pada sistem KorlasSync.</p>
 
         @include('partials.flash')
 
@@ -134,7 +134,7 @@
                     <input type="checkbox" name="remember" value="1" {{ old('remember') ? 'checked' : '' }}>
                     <span>Ingat saya di perangkat ini</span>
                 </label>
-                <span class="auth-help">Lupa akses? Hubungi admin</span>
+                <a href="{{ route('password.request') }}" class="auth-help" style="color: var(--brand); font-weight: 600; text-decoration: none;">Lupa kata sandi?</a>
             </div>
 
             <button type="submit" class="btn btn-primary btn-block">
@@ -144,24 +144,6 @@
         </form>
 
         <p class="auth-switch">Belum punya akun? <a href="{{ route('register') }}">Daftar sebagai orang tua</a></p>
-
-        <div class="auth-divider">Coba akun demo</div>
-
-        <div class="demo-accounts">
-            <button type="button" class="demo-account" data-demo-email="admin@korlassync.test" data-demo-password="password">
-                <x-icon name="shield" :size="16" />
-                <span>Admin</span>
-            </button>
-            <button type="button" class="demo-account" data-demo-email="koordinator@korlassync.test" data-demo-password="password">
-                <x-icon name="school" :size="16" />
-                <span>Koordinator</span>
-            </button>
-            <button type="button" class="demo-account" data-demo-email="orangtua@korlassync.test" data-demo-password="password">
-                <x-icon name="users" :size="16" />
-                <span>Orang tua</span>
-            </button>
-        </div>
-        <p class="demo-note">Klik salah satu peran untuk mengisi formulir otomatis. Kata sandi demo: <code>password</code></p>
 
         <p class="auth-legal">Dengan masuk, Anda menyetujui penggunaan data untuk keperluan administrasi kelas.<br>© {{ now()->year }} KorlasSync. Dibuat untuk komunitas kelas.</p>
     </div>

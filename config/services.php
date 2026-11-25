@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'n8n' => [
+        'reminder_webhook_url' => env('N8N_REMINDER_WEBHOOK_URL', 'http://n8n:5678/webhook/reminder'),
+    ],
+
 ];

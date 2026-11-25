@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClassRoom;
-use App\Models\Due;
 use App\Models\Payment;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -20,13 +19,14 @@ class CashController extends Controller
         $classIds = $user->accessibleClassIds();
 
         $classes = ClassRoom::query()
-            ->whereIn('id', $classIds)
-            ->with('coordinator')
+            ->whereIn('id_kelas', $classIds)
+            ->with('coordinators')
             ->withCount('students')
-            ->orderBy('name')
+            ->orderBy('nama')
             ->get();
 
-        $class = $classes->firstWhere('id', $request->integer('class')) ?? $classes->first();
+        $requestedClassId = $request->string('class')->trim()->toString();
+        $class = ($requestedClassId ? $classes->firstWhere('id_kelas', $requestedClassId) : null) ?? $classes->first();
 
         if (! $class) {
             return view('kas.index', [
@@ -35,7 +35,7 @@ class CashController extends Controller
             ]);
         }
 
-        $tab = in_array($request->query('tab'), ['buku', 'iuran', 'pembayaran'], true)
+        $tab = in_array($request->query('tab'), ['buku', 'pembayaran'], true)
             ? $request->query('tab')
             : 'buku';
 
@@ -47,67 +47,39 @@ class CashController extends Controller
         }
 
         $transactions = $class->cashTransactions()
-            ->with(['recorder', 'payment'])
-            ->when($period, fn (Builder $query) => $query->whereBetween('transaction_date', [
+            ->with('classRoom.coordinators')
+            ->when($period, fn (Builder $query) => $query->whereBetween('tanggal', [
                 $period->toDateString(),
                 $period->copy()->endOfMonth()->toDateString(),
             ]))
-            ->latest('transaction_date')
-            ->latest('id')
+            ->orderByDesc('tanggal')
+            ->orderByDesc('created_at')
             ->paginate(12)
             ->withQueryString();
 
-        $income = (int) $class->cashTransactions()->where('type', 'masuk')->sum('amount');
-        $expense = (int) $class->cashTransactions()->where('type', 'keluar')->sum('amount');
+        $income = (int) round((float) $class->cashTransactions()->sum('debit'));
+        $expense = (int) round((float) $class->cashTransactions()->sum('kredit'));
 
         $activePeriod = $period ?? now();
-        $monthIncome = (int) $class->cashTransactions()
-            ->where('type', 'masuk')
-            ->whereBetween('transaction_date', [
+        $monthIncome = (int) round((float) $class->cashTransactions()
+            ->whereBetween('tanggal', [
                 $activePeriod->copy()->startOfMonth()->toDateString(),
                 $activePeriod->copy()->endOfMonth()->toDateString(),
             ])
-            ->sum('amount');
-        $monthExpense = (int) $class->cashTransactions()
-            ->where('type', 'keluar')
-            ->whereBetween('transaction_date', [
+            ->sum('debit'));
+        $monthExpense = (int) round((float) $class->cashTransactions()
+            ->whereBetween('tanggal', [
                 $activePeriod->copy()->startOfMonth()->toDateString(),
                 $activePeriod->copy()->endOfMonth()->toDateString(),
             ])
-            ->sum('amount');
-
-        $dues = Due::query()
-            ->where('class_id', $class->id)
-            ->with(['creator', 'payments.student', 'payments.verifier'])
-            ->orderByDesc('due_date')
-            ->get();
-
-        $dueRows = $dues->map(function (Due $due) use ($class) {
-            $target = $due->targetAmount($class->students_count);
-            $verified = $due->verifiedAmount();
-
-            return [
-                'due' => $due,
-                'target' => $target,
-                'verified' => $verified,
-                'remaining' => max(0, $target - $verified),
-                'percent' => $target > 0 ? min(100, (int) round($verified / $target * 100)) : 0,
-            ];
-        })->values();
-
-        $outstanding = (int) $dueRows->sum('remaining');
+            ->sum('kredit'));
 
         $payments = Payment::query()
-            ->with(['student', 'due', 'verifier'])
-            ->whereHas('due', fn (Builder $query) => $query->where('class_id', $class->id))
-            ->latest()
+            ->with(['student.classRoom'])
+            ->whereHas('student', fn (Builder $query) => $query->where('id_kelas', $class->id_kelas))
+            ->orderByDesc('created_at')
             ->paginate(10, ['*'], 'payment_page')
             ->withQueryString();
-
-        $pendingCount = Payment::query()
-            ->whereHas('due', fn (Builder $query) => $query->where('class_id', $class->id))
-            ->where('status', 'pending')
-            ->count();
 
         return view('kas.index', [
             'classes' => $classes,
@@ -120,10 +92,10 @@ class CashController extends Controller
             'balance' => $income - $expense,
             'monthIncome' => $monthIncome,
             'monthExpense' => $monthExpense,
-            'dueRows' => $dueRows,
-            'outstanding' => $outstanding,
+            'dueRows' => collect(),
+            'outstanding' => 0,
             'payments' => $payments,
-            'pendingCount' => $pendingCount,
+            'pendingCount' => 0,
         ]);
     }
 
@@ -131,31 +103,31 @@ class CashController extends Controller
     {
         $user = $request->user();
 
+        $classId = $request->string('class')->trim()->toString();
         $class = ClassRoom::query()
-            ->whereIn('id', $user->accessibleClassIds())
-            ->findOrFail($request->integer('class'));
+            ->whereIn('id_kelas', $user->accessibleClassIds())
+            ->findOrFail($classId);
 
         $transactions = $class->cashTransactions()
-            ->with(['recorder'])
-            ->orderBy('transaction_date')
-            ->orderBy('id')
+            ->with('classRoom.coordinators')
+            ->orderBy('tanggal')
+            ->orderBy('created_at')
             ->get();
 
-        $filename = 'kas-'.Str::slug($class->name).'-'.now()->format('Ymd').'.csv';
+        $filename = 'laporan-keuangan-'.Str::slug($class->name).'-'.now()->format('Ymd').'.csv';
 
         return response()->streamDownload(function () use ($transactions): void {
             $output = fopen('php://output', 'w');
             fwrite($output, "\xEF\xBB\xBF");
-            fputcsv($output, ['Tanggal', 'Jenis', 'Kategori', 'Keterangan', 'Nominal', 'Dicatat oleh']);
+            fputcsv($output, ['Tanggal', 'Keterangan', 'Debit', 'Kredit', 'Saldo']);
 
             foreach ($transactions as $transaction) {
                 fputcsv($output, [
-                    $transaction->transaction_date->format('Y-m-d'),
-                    ucfirst($transaction->type),
-                    $transaction->category,
+                    $transaction->tanggal->format('Y-m-d'),
                     $transaction->description,
-                    $transaction->amount,
-                    $transaction->recorder?->name ?? 'Sistem',
+                    (int) round((float) $transaction->debit),
+                    (int) round((float) $transaction->kredit),
+                    (int) round((float) $transaction->saldo),
                 ]);
             }
 

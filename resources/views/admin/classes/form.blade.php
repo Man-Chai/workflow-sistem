@@ -7,7 +7,7 @@
         <div>
             <a href="{{ route('classes.index') }}" class="card-link mb-2"><x-icon name="chevron-left" :size="12" /> Kembali ke kelas</a>
             <h1 class="page-title">{{ $classRoom ? 'Ubah kelas' : 'Tambah kelas' }}</h1>
-            <p class="page-sub">{{ $classRoom ? 'Perbarui identitas kelas dan koordinator penanggung jawab.' : 'Buat kelas baru, lalu tambahkan siswa dan koordinatornya.' }}</p>
+            <p class="page-sub">{{ $classRoom ? 'Perbarui nama kelas dan koordinator penanggung jawab.' : 'Buat kelas baru, lalu tambahkan siswa dan koordinatornya.' }}</p>
         </div>
     </div>
 
@@ -20,42 +20,24 @@
                 @endif
 
                 <div class="form-grid">
-                    <div class="field">
+                    <div class="field field-full">
                         <label class="label" for="name">Nama kelas <span class="req">*</span></label>
-                        <select name="name" id="name" class="select" required>
-                            <option value="">Pilih kelas</option>
-                            @foreach(\App\Models\ClassRoom::LEVELS as $level)
-                                <option value="{{ $level }}" @selected(old('name', $classRoom?->name) === $level)>{{ $level }}</option>
-                            @endforeach
-                        </select>
-                        <span class="hint">Kelas diseragamkan menjadi Kelas 1 sampai Kelas 6.</span>
+                        <input type="text" name="name" id="name" class="input" value="{{ old('name', $classRoom?->name) }}" placeholder="Contoh: XII MIPA 1" required maxlength="100">
                         @error('name') <span class="error">{{ $message }}</span> @enderror
                     </div>
 
-                    <div class="field">
-                        <label class="label" for="academic_year">Tahun ajaran <span class="req">*</span></label>
-                        <input type="text" name="academic_year" id="academic_year" class="input" value="{{ old('academic_year', $classRoom?->academic_year ?? '2026/2027') }}" placeholder="2026/2027" required maxlength="20">
-                        @error('academic_year') <span class="error">{{ $message }}</span> @enderror
-                    </div>
-
                     <div class="field field-full">
-                        <label class="label" for="coordinator_id">Koordinator kelas</label>
-                        <select name="coordinator_id" id="coordinator_id" class="select">
+                        <label class="label" for="coordinator_id">Koordinator / Pengurus kelas</label>
+                        <select name="coordinator_id" id="coordinator_id" class="select" data-searchable-select data-placeholder="Ketik nama atau email koordinator...">
                             <option value="">Belum ditugaskan</option>
                             @foreach($coordinators as $coordinator)
-                                <option value="{{ $coordinator->id }}" @selected((int) old('coordinator_id', $classRoom?->coordinator_id) === $coordinator->id)>
-                                    {{ $coordinator->name }} · {{ $coordinator->email }}
+                                <option value="{{ $coordinator->id }}" @selected((string) old('coordinator_id', $classRoom?->coordinator_id) === (string) $coordinator->id)>
+                                    {{ $coordinator->name }} ({{ $coordinator->roleLabel() }}) · {{ $coordinator->email }}
                                 </option>
                             @endforeach
                         </select>
-                        <span class="hint">Hanya pengguna dengan peran koordinator yang muncul di sini.</span>
+                        <span class="hint">Penugasan disimpan pada tabel <code>kelas_user</code>.</span>
                         @error('coordinator_id') <span class="error">{{ $message }}</span> @enderror
-                    </div>
-
-                    <div class="field field-full">
-                        <label class="label" for="description">Deskripsi kelas</label>
-                        <textarea name="description" id="description" class="textarea" maxlength="1000" placeholder="Deskripsi singkat kelas, program, atau catatan khusus.">{{ old('description', $classRoom?->description) }}</textarea>
-                        @error('description') <span class="error">{{ $message }}</span> @enderror
                     </div>
                 </div>
 

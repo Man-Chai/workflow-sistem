@@ -38,11 +38,11 @@
 
         <div class="stat">
             <div class="stat-top">
-                <span class="stat-label">Akun orang tua</span>
+                <span class="stat-label">Data orang tua</span>
                 <span class="stat-icon is-blue"><x-icon name="users" :size="17" /></span>
             </div>
             <div class="stat-value">{{ $stats['parents'] }}</div>
-            <div class="stat-meta"><x-icon name="shield" :size="12" /> Terhubung ke data siswa</div>
+            <div class="stat-meta"><x-icon name="shield" :size="12" /> Terhubung di tabel ortu</div>
         </div>
 
         <div class="stat">
@@ -51,21 +51,17 @@
                 <span class="stat-icon is-violet"><x-icon name="wallet" :size="17" /></span>
             </div>
             <div class="stat-value">{{ rupiah($stats['balance']) }}</div>
-            <div class="stat-meta"><x-icon name="trending-up" :size="12" /> Pemasukan dikurangi pengeluaran</div>
+            <div class="stat-meta"><x-icon name="trending-up" :size="12" /> Laporan keuangan kelas</div>
         </div>
 
         <div class="stat">
             <div class="stat-top">
-                <span class="stat-label">Menunggu verifikasi</span>
-                <span class="stat-icon is-amber"><x-icon name="clock" :size="17" /></span>
+                <span class="stat-label">Catatan pembukuan</span>
+                <span class="stat-icon is-amber"><x-icon name="receipt" :size="17" /></span>
             </div>
             <div class="stat-value">{{ $stats['pending'] }}</div>
             <div class="stat-meta">
-                @if($stats['pending'] > 0)
-                    <a href="{{ route('cash.index', ['tab' => 'pembayaran']) }}">Tinjau pembayaran <x-icon name="arrow-right" :size="11" /></a>
-                @else
-                    Semua pembayaran tertangani
-                @endif
+                <a href="{{ route('cash.index', ['tab' => 'pembayaran']) }}">Lihat pembukuan <x-icon name="arrow-right" :size="11" /></a>
             </div>
         </div>
     </div>

@@ -6,7 +6,7 @@ use App\Models\Agenda;
 use App\Models\Announcement;
 use App\Models\CashTransaction;
 use App\Models\ClassRoom;
-use App\Models\Due;
+use App\Models\Ortu;
 use App\Models\Payment;
 use App\Models\User;
 use App\Support\Cashflow;
@@ -28,163 +28,142 @@ class DashboardController extends Controller
     private function adminDashboard(User $user): View
     {
         $classes = ClassRoom::query()
-            ->with('coordinator')
+            ->with(['coordinators', 'grupWa'])
             ->withCount('students')
-            ->orderBy('name')
+            ->orderBy('nama')
             ->get();
 
         $classRows = $classes->map(function (ClassRoom $class) {
-            $target = (int) $class->dues()
-                ->where('is_active', true)
-                ->get()
-                ->sum(fn (Due $due) => $due->targetAmount($class->students_count));
-
-            $verified = (int) $class->payments()->where('payments.status', 'verified')->sum('payments.amount');
+            $verified = (int) round((float) $class->payments()->sum('pembukuan.jumlah'));
+            $balance = $class->cashBalance();
 
             return [
                 'class' => $class,
                 'students' => $class->students_count,
-                'balance' => $class->cashBalance(),
-                'target' => $target,
+                'balance' => $balance,
+                'target' => $verified,
                 'verified' => $verified,
-                'rate' => $target > 0 ? min(100, (int) round($verified / $target * 100)) : 0,
+                'rate' => $verified > 0 ? 100 : 0,
             ];
         });
 
-        $pendingPayments = Payment::query()
-            ->with(['student', 'due.classRoom'])
-            ->where('status', 'pending')
-            ->latest()
-            ->take(5)
-            ->get();
-
         $recentTransactions = CashTransaction::query()
-            ->with(['classRoom', 'recorder'])
-            ->latest('transaction_date')
-            ->latest('id')
+            ->with('classRoom.coordinators')
+            ->orderByDesc('tanggal')
+            ->orderByDesc('created_at')
             ->take(6)
             ->get();
 
         $announcements = Announcement::query()
-            ->with(['creator', 'classRoom'])
-            ->whereNotNull('published_at')
-            ->orderByDesc('is_pinned')
-            ->latest('published_at')
+            ->with('classRoom.coordinators')
+            ->orderByDesc('tanggal')
+            ->orderByDesc('mulai')
             ->take(4)
             ->get();
 
         $agendas = Agenda::query()
-            ->with('classRoom')
-            ->where('starts_at', '>=', now())
-            ->orderBy('starts_at')
+            ->with('classRoom.coordinators')
+            ->where('tanggal', '>=', today()->toDateString())
+            ->orderBy('tanggal')
+            ->orderBy('mulai')
             ->take(4)
             ->get();
 
         $stats = [
             'classes' => $classes->count(),
             'students' => (int) $classes->sum('students_count'),
-            'parents' => User::query()->where('role', User::ROLE_PARENT)->count(),
+            'parents' => Ortu::query()->count(),
             'balance' => (int) $classRows->sum('balance'),
-            'pending' => Payment::query()->where('status', 'pending')->count(),
+            'pending' => Payment::query()->count(),
         ];
 
         return view('dashboard.admin', [
             'classRows' => $classRows,
-            'pendingPayments' => $pendingPayments,
+            'pendingPayments' => collect(),
             'recentTransactions' => $recentTransactions,
             'announcements' => $announcements,
             'agendas' => $agendas,
             'stats' => $stats,
-            'series' => Cashflow::monthly($classes->pluck('id')->all()),
+            'series' => Cashflow::monthly($classes->pluck('id_kelas')->all()),
         ]);
     }
 
     private function coordinatorDashboard(User $user): View
     {
-        $class = $user->classesCoordinated()->withCount('students')->first();
+        $class = $user->classesCoordinated()->with('grupWa')->withCount('students')->first();
 
         if (! $class) {
             return view('dashboard.koordinator', ['class' => null]);
         }
 
-        $dues = $class->dues()->where('is_active', true)->orderBy('due_date')->get();
-        $target = (int) $dues->sum(fn (Due $due) => $due->targetAmount($class->students_count));
-        $verified = (int) $class->payments()->where('payments.status', 'verified')->sum('payments.amount');
-        $rate = $target > 0 ? min(100, (int) round($verified / $target * 100)) : 0;
-
-        $pendingPayments = Payment::query()
-            ->with(['student', 'due'])
-            ->whereHas('due', fn ($query) => $query->where('class_id', $class->id))
-            ->where('status', 'pending')
-            ->latest()
-            ->take(5)
-            ->get();
+        $verified = (int) round((float) $class->payments()->sum('pembukuan.jumlah'));
+        $target = $verified;
+        $rate = $verified > 0 ? 100 : 0;
 
         $recentTransactions = $class->cashTransactions()
-            ->with('recorder')
-            ->latest('transaction_date')
-            ->latest('id')
+            ->with('classRoom.coordinators')
+            ->orderByDesc('tanggal')
+            ->orderByDesc('created_at')
             ->take(5)
             ->get();
 
         $upcomingAgendas = Agenda::query()
             ->visibleTo($user)
-            ->with('classRoom')
-            ->where('starts_at', '>=', now())
-            ->orderBy('starts_at')
+            ->with('classRoom.coordinators')
+            ->where('tanggal', '>=', today()->toDateString())
+            ->orderBy('tanggal')
+            ->orderBy('mulai')
             ->take(4)
             ->get();
 
         $announcements = Announcement::query()
             ->visibleTo($user)
-            ->with(['creator', 'classRoom'])
-            ->orderByDesc('is_pinned')
-            ->latest('published_at')
+            ->with('classRoom.coordinators')
+            ->orderByDesc('tanggal')
+            ->orderByDesc('mulai')
             ->take(4)
             ->get();
 
         return view('dashboard.koordinator', [
             'class' => $class,
-            'dues' => $dues,
+            'dues' => collect(),
             'target' => $target,
             'verified' => $verified,
             'rate' => $rate,
             'balance' => $class->cashBalance(),
-            'pendingPayments' => $pendingPayments,
-            'pendingCount' => Payment::query()
-                ->whereHas('due', fn ($query) => $query->where('class_id', $class->id))
-                ->where('status', 'pending')
-                ->count(),
+            'pendingPayments' => collect(),
+            'pendingCount' => 0,
             'recentTransactions' => $recentTransactions,
             'upcomingAgendas' => $upcomingAgendas,
             'announcements' => $announcements,
-            'series' => Cashflow::monthly([$class->id]),
+            'series' => Cashflow::monthly([$class->id_kelas]),
         ]);
     }
 
     private function parentDashboard(User $user): View
     {
-        $children = $user->children()->with('classRoom')->orderBy('name')->get();
+        $children = $user->children;
 
         $upcomingAgendas = Agenda::query()
             ->visibleTo($user)
-            ->with('classRoom')
-            ->where('starts_at', '>=', now())
-            ->orderBy('starts_at')
+            ->with('classRoom.coordinators')
+            ->where('tanggal', '>=', today()->toDateString())
+            ->orderBy('tanggal')
+            ->orderBy('mulai')
             ->take(4)
             ->get();
 
         $announcements = Announcement::query()
             ->visibleTo($user)
-            ->with(['creator', 'classRoom'])
-            ->orderByDesc('is_pinned')
-            ->latest('published_at')
+            ->with('classRoom.coordinators')
+            ->orderByDesc('tanggal')
+            ->orderByDesc('mulai')
             ->take(4)
             ->get();
 
         return view('dashboard.orangtua', [
             'children' => $children,
-            'classCount' => $children->pluck('class_id')->filter()->unique()->count(),
+            'classCount' => $children->pluck('id_kelas')->filter()->unique()->count(),
             'upcomingAgendas' => $upcomingAgendas,
             'announcements' => $announcements,
             'latestAnnouncement' => $announcements->first(),

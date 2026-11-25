@@ -20,32 +20,27 @@ class AnnouncementController extends Controller
 
         $query = Announcement::query()
             ->visibleTo($user)
-            ->with(['creator', 'classRoom']);
+            ->with('classRoom.coordinators');
 
-        if (in_array($request->query('priority'), ['normal', 'penting', 'mendesak'], true)) {
-            $query->where('priority', $request->query('priority'));
-        }
-
-        if ($request->query('class') === 'global') {
-            $query->whereNull('class_id');
-        } elseif ($request->filled('class')) {
-            $query->where('class_id', $request->integer('class'));
+        if ($request->filled('class') && $request->query('class') !== 'global') {
+            $query->where('id_kelas', $request->string('class')->toString());
         }
 
         if ($request->filled('q')) {
             $search = $request->string('q')->trim()->toString();
-            $query->where(fn (Builder $sub) => $sub->where('title', 'like', '%'.$search.'%')->orWhere('body', 'like', '%'.$search.'%'));
+            $query->where(fn (Builder $sub) => $sub->where('agenda', 'ilike', '%'.$search.'%')
+                ->orWhere('keterangan', 'ilike', '%'.$search.'%'));
         }
 
         $announcements = $query
-            ->orderByDesc('is_pinned')
-            ->orderByDesc('published_at')
+            ->orderByDesc('tanggal')
+            ->orderByDesc('mulai')
             ->paginate(8)
             ->withQueryString();
 
         $classes = ClassRoom::query()
-            ->whereIn('id', $user->accessibleClassIds())
-            ->orderBy('name')
+            ->whereIn('id_kelas', $user->accessibleClassIds())
+            ->orderBy('nama')
             ->get();
 
         $base = Announcement::query()->visibleTo($user);
@@ -57,8 +52,8 @@ class AnnouncementController extends Controller
             'classFilter' => $request->query('class'),
             'search' => $request->query('q'),
             'totalCount' => (clone $base)->count(),
-            'urgentCount' => (clone $base)->where('priority', 'mendesak')->count(),
-            'pinnedCount' => (clone $base)->where('is_pinned', true)->count(),
+            'urgentCount' => (clone $base)->where('tanggal', '>=', today()->toDateString())->count(),
+            'pinnedCount' => (clone $base)->where('tanggal', today()->toDateString())->count(),
         ]);
     }
 
@@ -66,21 +61,20 @@ class AnnouncementController extends Controller
     {
         $user = auth()->user();
 
-        if (! $user->isAdmin()) {
-            abort_unless($announcement->published_at !== null, 404);
+        if (! $user->isAdmin() && $announcement->id_kelas !== null) {
             abort_unless(
-                $announcement->class_id === null || in_array($announcement->class_id, $user->accessibleClassIds(), true),
+                in_array($announcement->id_kelas, $user->accessibleClassIds(), true),
                 403
             );
         }
 
-        $announcement->load(['creator', 'classRoom']);
+        $announcement->load('classRoom.coordinators');
 
         $related = Announcement::query()
             ->visibleTo($user)
             ->with('classRoom')
-            ->whereKeyNot($announcement->id)
-            ->orderByDesc('published_at')
+            ->whereKeyNot($announcement->id_agenda)
+            ->orderByDesc('tanggal')
             ->take(3)
             ->get();
 
@@ -99,19 +93,22 @@ class AnnouncementController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $classId = $this->managedClassId($request, allowGlobal: true);
+        $classId = $this->managedClassId($request, allowGlobal: false);
         $data = $this->validateAnnouncement($request);
 
-        Announcement::create([
-            ...$data,
-            'class_id' => $classId,
-            'created_by' => $request->user()->id,
-            'published_at' => $request->boolean('publish') ? now() : null,
+        $announcement = Announcement::create([
+            'id_kelas' => $classId,
+            'tanggal' => today()->toDateString(),
+            'agenda' => $data['title'],
+            'mulai' => now()->format('H:i:s'),
+            'keterangan' => $data['body'],
         ]);
+
+        \App\Models\Agenda::dispatchN8nReminderWebhook((string) $announcement->id_agenda, 'create');
 
         return redirect()
             ->route('announcements.index')
-            ->with('success', 'Pemberitahuan berhasil dibuat.');
+            ->with('success', 'Pemberitahuan / agenda berhasil dibuat.');
     }
 
     public function edit(Announcement $announcement): View
@@ -127,16 +124,16 @@ class AnnouncementController extends Controller
     public function update(Request $request, Announcement $announcement): RedirectResponse
     {
         $this->authorizeAnnouncement($announcement);
-        $classId = $this->managedClassId($request, allowGlobal: true);
-
+        $classId = $this->managedClassId($request, allowGlobal: false);
         $data = $this->validateAnnouncement($request);
-        $publish = $request->boolean('publish');
 
         $announcement->update([
-            ...$data,
-            'class_id' => $classId,
-            'published_at' => $publish ? ($announcement->published_at ?? now()) : null,
+            'id_kelas' => $classId,
+            'agenda' => $data['title'],
+            'keterangan' => $data['body'],
         ]);
+
+        \App\Models\Agenda::dispatchN8nReminderWebhook((string) $announcement->id_agenda, 'update');
 
         return redirect()
             ->route('announcements.index')
@@ -153,23 +150,16 @@ class AnnouncementController extends Controller
 
     private function authorizeAnnouncement(Announcement $announcement): void
     {
-        if ($announcement->class_id === null) {
-            abort_unless(auth()->user()->isAdmin(), 403);
-        } else {
-            $this->assertCanManageClass($announcement->class_id);
-        }
+        $this->assertCanManageClass($announcement->id_kelas);
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, ClassRoom>
-     */
     private function availableClasses()
     {
         $user = auth()->user();
 
         return ClassRoom::query()
-            ->whereIn('id', $user->accessibleClassIds())
-            ->orderBy('name')
+            ->whereIn('id_kelas', $user->accessibleClassIds())
+            ->orderBy('nama')
             ->get();
     }
 
@@ -179,10 +169,8 @@ class AnnouncementController extends Controller
     private function validateAnnouncement(Request $request): array
     {
         return $request->validate([
-            'title' => ['required', 'string', 'max:160'],
+            'title' => ['required', 'string', 'max:255'],
             'body' => ['required', 'string', 'max:5000'],
-            'priority' => ['required', 'in:normal,penting,mendesak'],
-            'is_pinned' => ['nullable', 'boolean'],
-        ]) + ['is_pinned' => $request->boolean('is_pinned')];
+        ]);
     }
 }

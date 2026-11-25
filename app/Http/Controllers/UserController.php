@@ -6,6 +6,7 @@ use App\Models\ClassRoom;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -14,52 +15,83 @@ class UserController extends Controller
     public function index(Request $request): View
     {
         $query = User::query()
-            ->withCount(['children', 'classesCoordinated']);
+            ->with(['roleRelation', 'classesCoordinated'])
+            ->withCount('classesCoordinated');
 
         if ($request->filled('q')) {
             $search = $request->string('q')->trim()->toString();
-            $query->where(fn ($sub) => $sub->where('name', 'like', '%'.$search.'%')->orWhere('email', 'like', '%'.$search.'%'));
+            $query->where(fn ($sub) => $sub->where('nama', 'ilike', '%'.$search.'%')
+                ->orWhere('email', 'ilike', '%'.$search.'%')
+                ->orWhere('telepon', 'ilike', '%'.$search.'%')
+                ->orWhere('lid', 'ilike', '%'.$search.'%'));
         }
 
         if (in_array($request->query('role'), ['admin', 'koordinator', 'orang_tua'], true)) {
-            $query->where('role', $request->query('role'));
+            $roleId = User::resolveRoleId($request->query('role'));
+            if ($roleId) {
+                $query->where('id_role', $roleId);
+            }
         }
 
-        $users = $query->orderBy('role')->orderBy('name')->paginate(12)->withQueryString();
+        $users = $query->orderBy('nama')->paginate(12)->withQueryString();
+
+        $allUsers = User::query()->with('roleRelation')->get();
 
         return view('admin.users.index', [
             'users' => $users,
             'roleFilter' => $request->query('role'),
             'search' => $request->query('q'),
             'counts' => [
-                'all' => User::query()->count(),
-                'admin' => User::query()->where('role', 'admin')->count(),
-                'koordinator' => User::query()->where('role', 'koordinator')->count(),
-                'orang_tua' => User::query()->where('role', 'orang_tua')->count(),
+                'all' => $allUsers->count(),
+                'admin' => $allUsers->filter(fn (User $u) => $u->isAdmin())->count(),
+                'koordinator' => $allUsers->filter(fn (User $u) => $u->isCoordinator())->count(),
+                'orang_tua' => $allUsers->filter(fn (User $u) => $u->isParent())->count(),
             ],
         ]);
     }
 
     public function create(): View
     {
-        return view('admin.users.form', ['user' => null]);
+        return view('admin.users.form', [
+            'user' => null,
+            'classes' => ClassRoom::query()->orderBy('nama')->get(),
+        ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'email' => ['required', 'string', 'email', 'max:150', 'unique:users,email'],
+            'name' => ['required', 'string', 'max:100'],
+            'email' => ['required', 'string', 'email', 'max:100', 'unique:user,email'],
             'password' => ['required', 'string', 'min:8'],
             'role' => ['required', 'in:admin,koordinator,orang_tua'],
-            'phone' => ['nullable', 'string', 'max:30'],
-            'is_active' => ['nullable', 'boolean'],
+            'phone' => ['nullable', 'string', 'max:30', 'unique:user,telepon'],
+            'lid' => ['nullable', 'string', 'max:30', 'unique:user,lid'],
+            'class_id' => ['nullable', Rule::exists('kelas', 'id_kelas')],
         ]);
 
-        User::create([
-            ...$data,
-            'is_active' => $request->boolean('is_active'),
+        $user = User::create([
+            'id_role' => User::resolveRoleId($data['role']),
+            'nama' => $data['name'],
+            'email' => $data['email'],
+            'telepon' => ! empty($data['phone']) ? $data['phone'] : null,
+            'lid' => ! empty($data['lid']) ? $data['lid'] : null,
+            'password' => Hash::make($data['password']),
         ]);
+
+        if (! empty($data['class_id'])) {
+            $user->classesCoordinated()->sync([$data['class_id']]);
+        }
+
+        if ($data['role'] === User::ROLE_PARENT) {
+            \App\Models\Ortu::query()->firstOrCreate(
+                ['nama' => $data['name']],
+                [
+                    'email' => $data['email'],
+                    'telepon' => ! empty($data['phone']) ? $data['phone'] : null,
+                ]
+            );
+        }
 
         return redirect()
             ->route('users.index')
@@ -68,46 +100,55 @@ class UserController extends Controller
 
     public function edit(User $user): View
     {
-        return view('admin.users.form', ['user' => $user]);
+        $user->load('classesCoordinated');
+
+        return view('admin.users.form', [
+            'user' => $user,
+            'classes' => ClassRoom::query()->orderBy('nama')->get(),
+        ]);
     }
 
     public function update(Request $request, User $user): RedirectResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'email' => ['required', 'string', 'email', 'max:150', Rule::unique('users', 'email')->ignore($user->id)],
-            'password' => ['nullable', 'string', 'min:8'],
+            'name' => ['required', 'string', 'max:100'],
+            'email' => ['required', 'string', 'email', 'max:100', Rule::unique('user', 'email')->ignore($user->id_user, 'id_user')],
             'role' => ['required', 'in:admin,koordinator,orang_tua'],
-            'phone' => ['nullable', 'string', 'max:30'],
-            'is_active' => ['nullable', 'boolean'],
+            'phone' => ['nullable', 'string', 'max:30', Rule::unique('user', 'telepon')->ignore($user->id_user, 'id_user')],
+            'lid' => ['nullable', 'string', 'max:30', Rule::unique('user', 'lid')->ignore($user->id_user, 'id_user')],
+            'class_id' => ['nullable', Rule::exists('kelas', 'id_kelas')],
         ]);
 
         if (! $request->user()->isAdmin()) {
             abort(403);
         }
 
-        if (empty($data['password'])) {
-            unset($data['password']);
-        }
-
         if ($user->is($request->user()) && $data['role'] !== 'admin') {
             return back()->withErrors(['role' => 'Anda tidak dapat mengubah peran akun sendiri.'])->withInput();
         }
 
-        if ($user->is($request->user()) && ! $request->boolean('is_active')) {
-            return back()->withErrors(['is_active' => 'Anda tidak dapat menonaktifkan akun sendiri.'])->withInput();
-        }
-
-        $roleChangedFromCoordinator = $user->isCoordinator() && $data['role'] !== 'koordinator';
-
         $user->update([
-            ...$data,
-            'role' => $data['role'],
-            'is_active' => $request->boolean('is_active'),
+            'id_role' => User::resolveRoleId($data['role']),
+            'nama' => $data['name'],
+            'email' => $data['email'],
+            'telepon' => ! empty($data['phone']) ? $data['phone'] : null,
+            'lid' => ! empty($data['lid']) ? $data['lid'] : null,
         ]);
 
-        if ($roleChangedFromCoordinator) {
-            ClassRoom::query()->where('coordinator_id', $user->id)->update(['coordinator_id' => null]);
+        if (! empty($data['class_id'])) {
+            $user->classesCoordinated()->sync([$data['class_id']]);
+        } else {
+            $user->classesCoordinated()->detach();
+        }
+
+        if ($data['role'] === User::ROLE_PARENT) {
+            \App\Models\Ortu::query()->updateOrCreate(
+                ['nama' => $data['name']],
+                [
+                    'email' => $data['email'],
+                    'telepon' => ! empty($data['phone']) ? $data['phone'] : null,
+                ]
+            );
         }
 
         return redirect()
@@ -117,23 +158,13 @@ class UserController extends Controller
 
     public function toggle(Request $request, User $user): RedirectResponse
     {
-        if ($user->is($request->user())) {
-            return back()->with('error', 'Anda tidak dapat menonaktifkan akun sendiri.');
-        }
-
-        $user->update(['is_active' => ! $user->is_active]);
-
-        return back()->with('success', 'Status akun '.$user->name.' diperbarui menjadi '.($user->is_active ? 'aktif' : 'nonaktif').'.');
+        return back()->with('info', 'Semua akun pada tabel user n8n berstatus aktif.');
     }
 
     public function destroy(Request $request, User $user): RedirectResponse
     {
         if ($user->is($request->user())) {
             return back()->with('error', 'Anda tidak dapat menghapus akun sendiri.');
-        }
-
-        if ($user->isAdmin() && User::query()->where('role', 'admin')->count() <= 1) {
-            return back()->with('error', 'Administrator terakhir tidak dapat dihapus.');
         }
 
         $name = $user->name;

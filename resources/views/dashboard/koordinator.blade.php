@@ -125,34 +125,9 @@
                     <div class="divider"></div>
 
                     <div class="due-list">
-                        @forelse($dues->take(3) as $due)
-                            <div class="due-card">
-                                <div class="due-card-head">
-                                    <div>
-                                        <h3>{{ $due->title }}</h3>
-                                        <div class="due-meta">
-                                            <span>{{ $due->period ?: 'Tanpa periode' }}</span>
-                                            <span>·</span>
-                                            <span>Jatuh tempo {{ $due->due_date->format('d M Y') }}</span>
-                                        </div>
-                                    </div>
-                                    <span class="due-amount">{{ rupiah($due->amount) }}</span>
-                                </div>
-                                <div class="due-progress">
-                                    <div class="progress">
-                                        <div class="progress-bar {{ $due->progressPercent() < 50 ? 'is-warn' : '' }}" style="width: {{ $due->progressPercent() }}%"></div>
-                                    </div>
-                                    <div class="progress-meta">
-                                        <span>{{ $due->progressPercent() }}% terkumpul</span>
-                                        <span>{{ rupiah($due->verifiedAmount()) }}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        @empty
-                            <x-empty icon="receipt" title="Belum ada iuran" text="Buat iuran pertama agar orang tua dapat melakukan pembayaran.">
-                                <a href="{{ route('dues.create') }}" class="btn btn-sm btn-primary">Buat iuran</a>
-                            </x-empty>
-                        @endforelse
+                        <x-empty icon="receipt" title="Pembukuan & Laporan Keuangan" text="Gunakan menu Kas Kelas untuk mencatat pembayaran siswa ke tabel pembukuan atau transaksi kas ke laporan_keuangan.">
+                            <a href="{{ route('payments.create', ['class' => $class->id]) }}" class="btn btn-sm btn-primary">Catat pembukuan</a>
+                        </x-empty>
                     </div>
                 </div>
             </div>

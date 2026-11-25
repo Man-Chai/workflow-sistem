@@ -35,17 +35,36 @@
                     </div>
 
                     <div class="field">
+                        <label class="label" for="lid">WhatsApp LID / Tag Bot</label>
+                        <input type="text" name="lid" id="lid" class="input" value="{{ old('lid', $user?->lid) }}" placeholder="Contoh: 260090485551165" maxlength="30">
+                        <span class="hint">ID internal WhatsApp (LID) agar bot tetap mengenali pengguna saat nomor sudah disimpan di kontak bot.</span>
+                        @error('lid') <span class="error">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div class="field">
                         <label class="label" for="email">Alamat email <span class="req">*</span></label>
                         <input type="email" name="email" id="email" class="input" value="{{ old('email', $user?->email) }}" placeholder="nama@email.com" required maxlength="150">
                         @error('email') <span class="error">{{ $message }}</span> @enderror
                     </div>
 
-                    <div class="field">
-                        <label class="label" for="password">Kata sandi {{ $user ? '' : '*' }}</label>
-                        <input type="password" name="password" id="password" class="input" placeholder="{{ $user ? 'Kosongkan jika tidak diubah' : 'Minimal 8 karakter' }}" {{ $user ? '' : 'required' }} minlength="8" autocomplete="new-password">
-                        <span class="hint">{{ $user ? 'Isi hanya jika ingin mengganti kata sandi.' : 'Minimal 8 karakter. Sampaikan kata sandi kepada pengguna.' }}</span>
-                        @error('password') <span class="error">{{ $message }}</span> @enderror
-                    </div>
+                    @if(! $user)
+                        <div class="field">
+                            <label class="label" for="password">Kata sandi awal <span class="req">*</span></label>
+                            <input type="password" name="password" id="password" class="input" placeholder="Minimal 8 karakter (otomatis di-hash Bcrypt)" required minlength="8" autocomplete="new-password">
+                            <span class="hint">Kata sandi otomatis dienkripsi dengan Bcrypt.</span>
+                            @error('password') <span class="error">{{ $message }}</span> @enderror
+                        </div>
+                    @else
+                        <div class="field">
+                            <label class="label">Reset kata sandi</label>
+                            <div>
+                                <a href="{{ route('password.request') }}" class="btn btn-sm btn-outline">
+                                    <x-icon name="mail" :size="14" /> Reset via tautan verifikasi Email / Telepon
+                                </a>
+                            </div>
+                            <span class="hint">Pengaturan ulang kata sandi hanya dapat dilakukan melalui tautan verifikasi yang dikirim ke email atau nomor telepon pengguna.</span>
+                        </div>
+                    @endif
                 </div>
 
                 <div class="divider"></div>
@@ -73,6 +92,23 @@
                     @error('role') <span class="error">{{ $message }}</span> @enderror
                 </div>
 
+                @php
+                    $assignedClassId = $user?->classesCoordinated->first()?->id_kelas;
+                @endphp
+                <div class="field">
+                    <label class="label" for="class_id">Kelas yang terhubung (<code>kelas_user</code>)</label>
+                    <select name="class_id" id="class_id" class="select" data-searchable-select data-placeholder="Ketik nama kelas untuk mencari...">
+                        <option value="">— Belum dikaitkan ke kelas tertentu —</option>
+                        @foreach($classes as $classRoom)
+                            <option value="{{ $classRoom->id_kelas }}" @selected((string) old('class_id', $assignedClassId) === (string) $classRoom->id_kelas)>
+                                {{ $classRoom->name }} ({{ $classRoom->academic_year }})
+                            </option>
+                        @endforeach
+                    </select>
+                    <span class="hint">Mengaitkan pengguna langsung ke kelas tertentu pada tabel <code>kelas_user</code>.</span>
+                    @error('class_id') <span class="error">{{ $message }}</span> @enderror
+                </div>
+
                 <div class="field">
                     <label class="checkbox">
                         <input type="checkbox" name="is_active" value="1" @checked(old('is_active', $user?->is_active ?? true))>
@@ -83,13 +119,6 @@
                     </label>
                     @error('is_active') <span class="error">{{ $message }}</span> @enderror
                 </div>
-
-                @if($user?->isCoordinator())
-                    <div class="notice mt-2">
-                        <x-icon name="info" :size="15" />
-                        <span>Penugasan koordinator ke kelas dilakukan melalui menu <strong>Kelas & siswa</strong>. Jika peran diubah dari koordinator, penugasan kelas akan dilepas.</span>
-                    </div>
-                @endif
 
                 <div class="form-actions">
                     <a href="{{ route('users.index') }}" class="btn btn-ghost">Batal</a>

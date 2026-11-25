@@ -3,13 +3,13 @@
 use App\Http\Controllers\AgendaController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\CashController;
 use App\Http\Controllers\CashTransactionController;
 use App\Http\Controllers\ClassRoomController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\DeployController;
-use App\Http\Controllers\DueController;
+use App\Http\Controllers\GrupWaController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StudentController;
@@ -28,16 +28,19 @@ Route::middleware('guest')->group(function (): void {
     Route::post('daftar', [RegisterController::class, 'store'])->name('register.store');
 });
 
-Route::post('logout', [LoginController::class, 'logout'])->middleware('auth')->name('logout');
+// Password Reset via Verification Link (accessible to both guests and logged-in users)
+Route::get('lupa-password', [PasswordResetController::class, 'requestForm'])->name('password.request');
+Route::post('lupa-password', [PasswordResetController::class, 'sendLink'])->name('password.email');
+Route::get('reset-password/{token}', [PasswordResetController::class, 'resetForm'])->name('password.reset');
+Route::post('reset-password', [PasswordResetController::class, 'updatePassword'])->name('password.update');
 
-Route::get('deploy/setup', [DeployController::class, 'setup'])->name('deploy.setup');
+Route::post('logout', [LoginController::class, 'logout'])->middleware('auth')->name('logout');
 
 Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('profil', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('profil', [ProfileController::class, 'update'])->name('profile.update');
-    Route::put('profil/password', [ProfileController::class, 'password'])->name('profile.password');
 
     Route::middleware('role:admin,koordinator')->group(function (): void {
         Route::get('kas', [CashController::class, 'index'])->name('cash.index');
@@ -45,26 +48,22 @@ Route::middleware(['auth', 'active'])->group(function (): void {
 
         Route::get('kas/pembayaran/baru', [PaymentController::class, 'create'])->name('payments.create');
         Route::post('kas/pembayaran', [PaymentController::class, 'store'])->name('payments.store');
+        Route::get('kas/pembayaran/{payment}/ubah', [PaymentController::class, 'edit'])->name('payments.edit');
+        Route::put('kas/pembayaran/{payment}', [PaymentController::class, 'update'])->name('payments.update');
         Route::delete('kas/pembayaran/{payment}', [PaymentController::class, 'destroy'])->name('payments.destroy');
-        Route::get('kas/pembayaran/{payment}/bukti', [PaymentController::class, 'proof'])->name('payments.proof');
 
         Route::get('kas/transaksi/baru', [CashTransactionController::class, 'create'])->name('cash.create');
         Route::post('kas/transaksi', [CashTransactionController::class, 'store'])->name('cash.store');
+        Route::get('kas/transaksi/{transaction}/ubah', [CashTransactionController::class, 'edit'])->name('cash.edit');
+        Route::put('kas/transaksi/{transaction}', [CashTransactionController::class, 'update'])->name('cash.update');
         Route::delete('kas/transaksi/{transaction}', [CashTransactionController::class, 'destroy'])->name('cash.destroy');
 
-        Route::get('kas/iuran/baru', [DueController::class, 'create'])->name('dues.create');
-        Route::post('kas/iuran', [DueController::class, 'store'])->name('dues.store');
-        Route::get('kas/iuran/{due}/ubah', [DueController::class, 'edit'])->name('dues.edit');
-        Route::put('kas/iuran/{due}', [DueController::class, 'update'])->name('dues.update');
-        Route::delete('kas/iuran/{due}', [DueController::class, 'destroy'])->name('dues.destroy');
-
-        Route::post('kas/pembayaran/{payment}/verifikasi', [PaymentController::class, 'verify'])->name('payments.verify');
-        Route::post('kas/pembayaran/{payment}/tolak', [PaymentController::class, 'reject'])->name('payments.reject');
-
         Route::get('kelas/{classRoom}', [ClassRoomController::class, 'show'])->name('classes.show');
+        Route::get('kelas/{classRoom}/siswa/tambah', [StudentController::class, 'assignForm'])->name('classes.students.assign');
 
         Route::get('siswa/{student}/ubah', [StudentController::class, 'edit'])->name('students.edit');
         Route::post('kelas/{classRoom}/siswa', [StudentController::class, 'store'])->name('students.store');
+        Route::delete('kelas/siswa/{student}/lepas', [StudentController::class, 'unassign'])->name('students.unassign');
         Route::put('siswa/{student}', [StudentController::class, 'update'])->name('students.update');
         Route::delete('siswa/{student}', [StudentController::class, 'destroy'])->name('students.destroy');
     });
@@ -72,7 +71,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('agenda', [AgendaController::class, 'index'])->name('agenda.index');
     Route::get('pemberitahuan', [AnnouncementController::class, 'index'])->name('announcements.index');
     Route::get('pemberitahuan/{announcement}', [AnnouncementController::class, 'show'])
-        ->whereNumber('announcement')
+        ->whereUuid('announcement')
         ->name('announcements.show');
 
     Route::middleware('role:admin,koordinator')->group(function (): void {
@@ -96,6 +95,22 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::get('admin/kelas/{classRoom}/ubah', [ClassRoomController::class, 'edit'])->name('classes.edit');
         Route::put('admin/kelas/{classRoom}', [ClassRoomController::class, 'update'])->name('classes.update');
         Route::delete('admin/kelas/{classRoom}', [ClassRoomController::class, 'destroy'])->name('classes.destroy');
+
+        Route::get('admin/siswa', [StudentController::class, 'index'])->name('students.index');
+        Route::get('admin/siswa/baru', [StudentController::class, 'create'])->name('students.create');
+        Route::post('admin/siswa', [StudentController::class, 'storeMaster'])->name('students.store-master');
+        Route::get('admin/ortu/baru', [StudentController::class, 'createParent'])->name('parents.create');
+        Route::post('admin/ortu', [StudentController::class, 'storeParent'])->name('parents.store');
+        Route::get('admin/ortu/{ortu}/ubah', [StudentController::class, 'editParent'])->name('parents.edit');
+        Route::put('admin/ortu/{ortu}', [StudentController::class, 'updateParent'])->name('parents.update');
+        Route::delete('admin/ortu/{ortu}', [StudentController::class, 'destroyParent'])->name('parents.destroy');
+
+        Route::get('admin/grup-wa', [GrupWaController::class, 'index'])->name('wa-groups.index');
+        Route::get('admin/grup-wa/baru', [GrupWaController::class, 'create'])->name('wa-groups.create');
+        Route::post('admin/grup-wa', [GrupWaController::class, 'store'])->name('wa-groups.store');
+        Route::get('admin/grup-wa/{waGroup}/ubah', [GrupWaController::class, 'edit'])->name('wa-groups.edit');
+        Route::put('admin/grup-wa/{waGroup}', [GrupWaController::class, 'update'])->name('wa-groups.update');
+        Route::delete('admin/grup-wa/{waGroup}', [GrupWaController::class, 'destroy'])->name('wa-groups.destroy');
 
         Route::get('admin/pengguna', [UserController::class, 'index'])->name('users.index');
         Route::get('admin/pengguna/baru', [UserController::class, 'create'])->name('users.create');

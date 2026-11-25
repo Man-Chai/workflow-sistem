@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\ManagesClassData;
 use App\Models\Agenda;
 use App\Models\ClassRoom;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 class AgendaController extends Controller
@@ -19,29 +19,27 @@ class AgendaController extends Controller
         $user = $request->user();
         $status = in_array($request->query('status'), ['upcoming', 'past', 'all'], true)
             ? $request->query('status')
-            : 'upcoming';
+            : 'all';
 
         $query = Agenda::query()
             ->visibleTo($user)
-            ->with(['classRoom', 'creator']);
+            ->with('classRoom.coordinators');
 
-        if ($request->query('class') === 'global') {
-            $query->whereNull('class_id');
-        } elseif ($request->filled('class')) {
-            $query->where('class_id', $request->integer('class'));
+        if ($request->filled('class') && $request->query('class') !== 'global') {
+            $query->where('id_kelas', $request->string('class')->toString());
         }
 
         $query = match ($status) {
-            'past' => $query->where('starts_at', '<', now())->orderByDesc('starts_at'),
-            'all' => $query->orderByDesc('starts_at'),
-            default => $query->where('starts_at', '>=', now())->orderBy('starts_at'),
+            'past' => $query->where('tanggal', '<', today()->toDateString())->orderByDesc('tanggal')->orderByDesc('mulai'),
+            'upcoming' => $query->where('tanggal', '>=', today()->toDateString())->orderBy('tanggal')->orderBy('mulai'),
+            default => $query->orderByDesc('tanggal')->orderByDesc('mulai'),
         };
 
         $agendas = $query->paginate(9)->withQueryString();
 
         $classes = ClassRoom::query()
-            ->whereIn('id', $user->accessibleClassIds())
-            ->orderBy('name')
+            ->whereIn('id_kelas', $user->accessibleClassIds())
+            ->orderBy('nama')
             ->get();
 
         return view('agenda.index', [
@@ -49,15 +47,12 @@ class AgendaController extends Controller
             'classes' => $classes,
             'status' => $status,
             'classFilter' => $request->query('class'),
-            'upcomingCount' => Agenda::query()->visibleTo($user)->where('starts_at', '>=', now())->count(),
+            'upcomingCount' => Agenda::query()->visibleTo($user)->where('tanggal', '>=', today()->toDateString())->count(),
             'monthCount' => Agenda::query()
                 ->visibleTo($user)
-                ->whereBetween('starts_at', [now()->startOfMonth(), now()->endOfMonth()])
+                ->whereBetween('tanggal', [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString()])
                 ->count(),
-            'schoolCount' => Agenda::query()
-                ->visibleTo($user)
-                ->whereNull('class_id')
-                ->count(),
+            'schoolCount' => Agenda::query()->visibleTo($user)->count(),
         ]);
     }
 
@@ -65,8 +60,8 @@ class AgendaController extends Controller
     {
         $user = auth()->user();
         $classes = ClassRoom::query()
-            ->whereIn('id', $user->accessibleClassIds())
-            ->orderBy('name')
+            ->whereIn('id_kelas', $user->accessibleClassIds())
+            ->orderBy('nama')
             ->get();
 
         abort_if($classes->isEmpty() && ! $user->isAdmin(), 403, 'Anda belum ditugaskan ke kelas.');
@@ -76,14 +71,22 @@ class AgendaController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $classId = $this->managedClassId($request, allowGlobal: true);
+        $classId = $this->managedClassId($request, allowGlobal: false);
         $data = $this->validateAgenda($request);
 
-        Agenda::create([
-            ...$data,
-            'class_id' => $classId,
-            'created_by' => $request->user()->id,
+        $starts = Carbon::parse($data['starts_at']);
+        $ends = ! empty($data['ends_at']) ? Carbon::parse($data['ends_at']) : null;
+
+        $agenda = Agenda::create([
+            'id_kelas' => $classId,
+            'tanggal' => $starts->toDateString(),
+            'agenda' => $data['title'],
+            'mulai' => $starts->format('H:i:s'),
+            'selesai' => $ends?->format('H:i:s'),
+            'keterangan' => $data['description'] ?? null,
         ]);
+
+        Agenda::dispatchN8nReminderWebhook((string) $agenda->id_agenda, 'create');
 
         return redirect()
             ->route('agenda.index')
@@ -96,8 +99,8 @@ class AgendaController extends Controller
 
         $user = auth()->user();
         $classes = ClassRoom::query()
-            ->whereIn('id', $user->accessibleClassIds())
-            ->orderBy('name')
+            ->whereIn('id_kelas', $user->accessibleClassIds())
+            ->orderBy('nama')
             ->get();
 
         return view('agenda.form', ['agenda' => $agenda, 'classes' => $classes]);
@@ -106,12 +109,22 @@ class AgendaController extends Controller
     public function update(Request $request, Agenda $agenda): RedirectResponse
     {
         $this->authorizeAgenda($agenda);
-        $classId = $this->managedClassId($request, allowGlobal: true);
+        $classId = $this->managedClassId($request, allowGlobal: false);
+        $data = $this->validateAgenda($request);
+
+        $starts = Carbon::parse($data['starts_at']);
+        $ends = ! empty($data['ends_at']) ? Carbon::parse($data['ends_at']) : null;
 
         $agenda->update([
-            ...$this->validateAgenda($request),
-            'class_id' => $classId,
+            'id_kelas' => $classId,
+            'tanggal' => $starts->toDateString(),
+            'agenda' => $data['title'],
+            'mulai' => $starts->format('H:i:s'),
+            'selesai' => $ends?->format('H:i:s'),
+            'keterangan' => $data['description'] ?? null,
         ]);
+
+        Agenda::dispatchN8nReminderWebhook((string) $agenda->id_agenda, 'update');
 
         return redirect()
             ->route('agenda.index')
@@ -128,11 +141,7 @@ class AgendaController extends Controller
 
     private function authorizeAgenda(Agenda $agenda): void
     {
-        if ($agenda->class_id === null) {
-            abort_unless(auth()->user()->isAdmin(), 403);
-        } else {
-            $this->assertCanManageClass($agenda->class_id);
-        }
+        $this->assertCanManageClass($agenda->id_kelas);
     }
 
     /**
@@ -141,12 +150,10 @@ class AgendaController extends Controller
     private function validateAgenda(Request $request): array
     {
         return $request->validate([
-            'title' => ['required', 'string', 'max:140'],
+            'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'location' => ['nullable', 'string', 'max:140'],
             'starts_at' => ['required', 'date'],
-            'ends_at' => ['nullable', 'date', 'after:starts_at'],
-            'is_published' => ['nullable', 'boolean'],
-        ]) + ['is_published' => $request->boolean('is_published')];
+            'ends_at' => ['nullable', 'date'],
+        ]);
     }
 }

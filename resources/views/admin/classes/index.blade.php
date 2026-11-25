@@ -1,13 +1,13 @@
 @extends('layouts.app')
 
-@section('title', 'Kelas & Siswa')
+@section('title', 'Kelas')
 
 @section('content')
     <div class="page-head">
         <div>
             <span class="eyebrow"><x-icon name="school" :size="13" /> Struktur kelas</span>
-            <h1 class="page-title">Kelas & siswa</h1>
-            <p class="page-sub">Atur kelas, tugaskan koordinator, dan kelola data siswa dalam satu tempat.</p>
+            <h1 class="page-title">Kelas</h1>
+            <p class="page-sub">Atur daftar kelas, tugaskan koordinator, dan tempatkan siswa yang sudah terdaftar.</p>
         </div>
         <div class="page-actions">
             <a href="{{ route('classes.create') }}" class="btn btn-primary">

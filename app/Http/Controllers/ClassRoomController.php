@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ManagesClassData;
 use App\Models\ClassRoom;
+use App\Models\Ortu;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -17,14 +18,14 @@ class ClassRoomController extends Controller
 
     public function index(Request $request): View
     {
-        $query = ClassRoom::query()->with('coordinator')->withCount('students');
+        $query = ClassRoom::query()->with(['coordinators', 'grupWa'])->withCount('students');
 
         if ($request->filled('q')) {
             $search = $request->string('q')->trim()->toString();
-            $query->where(fn ($sub) => $sub->where('name', 'like', '%'.$search.'%')->orWhere('academic_year', 'like', '%'.$search.'%'));
+            $query->where('nama', 'ilike', '%'.$search.'%');
         }
 
-        $classes = $query->orderBy('name')->paginate(9)->withQueryString();
+        $classes = $query->orderBy('nama')->paginate(12)->withQueryString();
 
         $rows = $classes->getCollection()->map(fn (ClassRoom $class) => [
             'class' => $class,
@@ -37,7 +38,7 @@ class ClassRoomController extends Controller
             'search' => $request->query('q'),
             'totalClasses' => ClassRoom::query()->count(),
             'totalStudents' => Student::query()->count(),
-            'unassigned' => ClassRoom::query()->whereNull('coordinator_id')->count(),
+            'unassigned' => ClassRoom::query()->doesntHave('coordinators')->count(),
         ]);
     }
 
@@ -53,7 +54,13 @@ class ClassRoomController extends Controller
     {
         $data = $this->validateClass($request);
 
-        ClassRoom::create($data);
+        $classRoom = ClassRoom::create([
+            'nama' => $data['name'],
+        ]);
+
+        if (! empty($data['coordinator_id'])) {
+            $classRoom->coordinators()->sync([$data['coordinator_id']]);
+        }
 
         return redirect()
             ->route('classes.index')
@@ -63,32 +70,33 @@ class ClassRoomController extends Controller
     public function show(ClassRoom $classRoom): View
     {
         $user = auth()->user();
-        abort_unless($user->isAdmin() || $user->canManageClass($classRoom->id), 403);
+        abort_unless($user->isAdmin() || $user->canManageClass($classRoom->id_kelas), 403);
 
-        $classRoom->load(['coordinator', 'students.parent']);
+        $classRoom->load(['coordinators', 'students.ortu', 'grupWa']);
 
-        $dues = $classRoom->dues()->with('creator')->orderByDesc('due_date')->get()->map(function ($due) use ($classRoom) {
-            $target = $due->targetAmount($classRoom->students->count());
-            $verified = $due->verifiedAmount();
-
-            return [
-                'due' => $due,
-                'target' => $target,
-                'verified' => $verified,
-                'percent' => $target > 0 ? min(100, (int) round($verified / $target * 100)) : 0,
-            ];
-        });
+        $availableStudents = Student::query()
+            ->with(['ortu', 'classRoom'])
+            ->where(function ($q) use ($classRoom): void {
+                $q->whereNull('id_kelas')
+                    ->orWhere('id_kelas', '!=', $classRoom->id_kelas);
+            })
+            ->orderByRaw('CASE WHEN id_kelas IS NULL THEN 0 ELSE 1 END')
+            ->orderBy('nama')
+            ->get();
 
         return view('admin.classes.show', [
             'classRoom' => $classRoom,
-            'dues' => $dues,
+            'dues' => collect(),
             'balance' => $classRoom->cashBalance(),
-            'parents' => User::query()->where('role', User::ROLE_PARENT)->orderBy('name')->get(),
+            'parents' => Ortu::query()->orderBy('nama')->get(),
+            'availableStudents' => $availableStudents,
         ]);
     }
 
     public function edit(ClassRoom $classRoom): View
     {
+        $classRoom->load('coordinators');
+
         return view('admin.classes.form', [
             'classRoom' => $classRoom,
             'coordinators' => $this->coordinators(),
@@ -97,7 +105,17 @@ class ClassRoomController extends Controller
 
     public function update(Request $request, ClassRoom $classRoom): RedirectResponse
     {
-        $classRoom->update($this->validateClass($request, $classRoom));
+        $data = $this->validateClass($request, $classRoom);
+
+        $classRoom->update([
+            'nama' => $data['name'],
+        ]);
+
+        if (! empty($data['coordinator_id'])) {
+            $classRoom->coordinators()->sync([$data['coordinator_id']]);
+        } else {
+            $classRoom->coordinators()->detach();
+        }
 
         return redirect()
             ->route('classes.index')
@@ -106,6 +124,10 @@ class ClassRoomController extends Controller
 
     public function destroy(ClassRoom $classRoom): RedirectResponse
     {
+        if ($classRoom->students()->exists()) {
+            return back()->with('error', 'Kelas masih memiliki siswa terdaftar. Hapus atau pindahkan siswa terlebih dahulu.');
+        }
+
         $name = $classRoom->name;
         $classRoom->delete();
 
@@ -114,15 +136,10 @@ class ClassRoomController extends Controller
             ->with('success', 'Kelas '.$name.' beserta seluruh data terkait telah dihapus.');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, User>
-     */
     private function coordinators()
     {
         return User::query()
-            ->where('role', User::ROLE_KOORDINATOR)
-            ->where('is_active', true)
-            ->orderBy('name')
+            ->orderBy('nama')
             ->get();
     }
 
@@ -131,23 +148,17 @@ class ClassRoomController extends Controller
      */
     private function validateClass(Request $request, ?ClassRoom $classRoom = null): array
     {
-        $academicYear = $request->input('academic_year');
-
         return $request->validate([
             'name' => [
                 'required',
                 'string',
-                Rule::in(ClassRoom::LEVELS),
-                Rule::unique('classes')
-                    ->where(fn ($query) => $query->where('academic_year', $academicYear))
-                    ->ignore($classRoom?->id),
+                'max:100',
+                Rule::unique('kelas', 'nama')->ignore($classRoom?->id_kelas, 'id_kelas'),
             ],
-            'academic_year' => ['required', 'string', 'max:20'],
             'coordinator_id' => [
                 'nullable',
-                Rule::exists('users', 'id')->where(fn ($query) => $query->where('role', User::ROLE_KOORDINATOR)),
+                Rule::exists('user', 'id_user'),
             ],
-            'description' => ['nullable', 'string', 'max:1000'],
         ]);
     }
 }

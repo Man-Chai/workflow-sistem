@@ -10,7 +10,7 @@ class Cashflow
     /**
      * Build a six-month income, expense, and running-balance series for the given classes.
      *
-     * @param  array<int, int>  $classIds
+     * @param  array<int, string>  $classIds
      * @return array{
      *     labels: array<int, string>,
      *     income: array<int, int>,
@@ -30,17 +30,15 @@ class Cashflow
 
         $firstMonth = Carbon::now()->startOfMonth()->subMonths($months - 1);
 
-        $openingIncome = (int) CashTransaction::query()
-            ->whereIn('class_id', $classIds)
-            ->where('type', 'masuk')
-            ->where('transaction_date', '<', $firstMonth->toDateString())
-            ->sum('amount');
+        $openingIncome = (int) round((float) CashTransaction::query()
+            ->whereIn('id_kelas', $classIds)
+            ->where('tanggal', '<', $firstMonth->toDateString())
+            ->sum('debit'));
 
-        $openingExpense = (int) CashTransaction::query()
-            ->whereIn('class_id', $classIds)
-            ->where('type', 'keluar')
-            ->where('transaction_date', '<', $firstMonth->toDateString())
-            ->sum('amount');
+        $openingExpense = (int) round((float) CashTransaction::query()
+            ->whereIn('id_kelas', $classIds)
+            ->where('tanggal', '<', $firstMonth->toDateString())
+            ->sum('kredit'));
 
         $runningBalance = $openingIncome - $openingExpense;
         $balance = [];
@@ -50,14 +48,14 @@ class Cashflow
             $labels[] = $month->translatedFormat('M');
 
             $base = CashTransaction::query()
-                ->whereIn('class_id', $classIds)
-                ->whereBetween('transaction_date', [
+                ->whereIn('id_kelas', $classIds)
+                ->whereBetween('tanggal', [
                     $month->copy()->startOfMonth()->toDateString(),
                     $month->copy()->endOfMonth()->toDateString(),
                 ]);
 
-            $monthIncome = (int) (clone $base)->where('type', 'masuk')->sum('amount');
-            $monthExpense = (int) (clone $base)->where('type', 'keluar')->sum('amount');
+            $monthIncome = (int) round((float) (clone $base)->sum('debit'));
+            $monthExpense = (int) round((float) (clone $base)->sum('kredit'));
 
             $income[] = $monthIncome;
             $expense[] = $monthExpense;
@@ -81,9 +79,6 @@ class Cashflow
         ];
     }
 
-    /**
-     * @param  array{income: array<int, int>, expense: array<int, int>}  $series
-     */
     public static function percent(int $value, int $max): int
     {
         if ($max <= 0) {
